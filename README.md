@@ -1,6 +1,7 @@
 # A probabilistic classification of X-ray sources
+## Classification of X-ray sources using Bayesian Optimized Inference (CLAXBOI)
 
-This folder contains all the necessary to run the classification of Tranin et al. (2021) once your X-ray catalogue is augmented as follows:
+This folder contains all the necessary to run the CLAXBOI code (Tranin et al. 2021) once your X-ray catalogue is augmented as follows:
 1. first column is the identifier
 2. there is a column named "class", it is NULL for unknown objects and contains the class label for the reference sample
 3. other columns contain all properties you want to use (and more if needed)

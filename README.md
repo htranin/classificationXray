@@ -8,7 +8,7 @@ This folder contains all the necessary to run the CLAXBOI code (Tranin et al. 20
 
 ### Usage:
 
-First of all change the file configfile.ini with your filenames and data-dependent parameters
+First of all, please update the file <code>configfile.ini</code> with your filenames and data-dependent parameters.
 Then you can run
 
 <code>python3 classify_new.py</code>

@@ -20,7 +20,7 @@ Then run again
 
 <code>python3 classify_new.py</code>
 
-to optimize the classification on the class of your choice. Finally, set <code>save: 1</code> and <code>optimize_coeffs: 1</code>
+to optimize the classification on the class of your choice. Finally, set <code>save: 1</code> and <code>optimize_coeffs: 0</code>
 in <code>configfile.ini</code> and run <code>python3 classify_new.py</code> a last time.
 
 To plot the distributions computed by the first command, try:

@@ -8,16 +8,20 @@ This folder contains all the necessary to run the CLAXBOI code (Tranin et al. 20
 
 ### Usage:
 
-<code>python3 classify_new.py *NameOfYourCatalogue*.csv</code>
+First of all change the file configfile.ini with your filenames and data-dependent parameters
+Then you can run
+
+<code>python3 classify_new.py</code>
 
 (follow the instructions)
 
-Only after launching the previous command you can run:
+Only after launching the previous command you can set <code>optimize_coeffs: 1</code> in <code>configfile.ini</code>, to perform the optimization. This may take a few hours, but you can interrupt it (Ctrl+C).
+Then run again
 
-<code>python3 classify_new.py --optimize 2</code>
+<code>python3 classify_new.py</code>
 
-to optimize the classification on class labelled as 2.
-**Update 20/02/21: the command line option "optimize" is not yet properly implemented. Coming soon...**
+to optimize the classification on the class of your choice. Finally, set <code>save: 1</code> and <code>optimize_coeffs: 1</code>
+in <code>configfile.ini</code> and run <code>python3 classify_new.py</code> a last time.
 
 To plot the distributions computed by the first command, try:
 

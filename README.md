@@ -17,6 +17,7 @@ Only after launching the previous command you can run:
 <code>python3 classify_new.py --optimize 2</code>
 
 to optimize the classification on class labelled as 2.
+**Update 20/02/21: the command line option "optimize" is not yet properly implemented. Coming soon...**
 
 To plot the distributions computed by the first command, try:
 

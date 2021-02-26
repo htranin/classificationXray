@@ -30,7 +30,7 @@ dirout='classif/distributions/'
 #properties=['b','HR2','logFxFIR','logFxFopt','logFIR','FittedPowGamma']
 
 
-def make(SourcesCsv, properties, Classes=[0,1,2], equipart=False, fraction=1, plotdistrib=False,N=100,verbose=False,dirout='classif/distribtest/',force_cst=[],dumb=False):
+def make(SourcesCsv, properties, Classes=[0,1,2], equipart=False, fraction=1, plotdistrib=False,N=100,verbose=False,dirout='classif/distribtest/', custom_pty=[],dumb=False):
 
     if dirout:
         os.system('mkdir -p %s'%dirout)
@@ -194,7 +194,7 @@ def make(SourcesCsv, properties, Classes=[0,1,2], equipart=False, fraction=1, pl
                 #=> do not smooth its distributions
                 dsm_kde=np.histogram(Data[ind],Bfinal)[0]
 
-            if [p,ic] in force_cst:
+            if [p,ic] in custom_pty:
                 if p=="b":
                     dsm_kde=0.5*dsm_kde+0.5*np.cos(xfinal*np.pi/180)/sum(np.cos(xfinal*np.pi/180))*sum(dsm_kde)
                     #half the original distribution + half a uniform prior

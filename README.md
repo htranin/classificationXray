@@ -15,7 +15,7 @@ Then you can run
 
 (follow the instructions)
 
-Only after launching the previous command you can set <code>optimize_coeffs: 1</code> in <code>configfile.ini</code>, to perform the optimization. This may take a few hours, but you can interrupt it (Ctrl+C).
+Only after launching the previous command you can set <code>optimize_coeffs: 1</code> in <code>configfile.ini</code>, to perform the optimization if you wish to. This may take a few hours, but you may interrupt it before it converges (Ctrl+C).
 Then run again
 
 <code>python3 classify_new.py</code>
@@ -23,7 +23,7 @@ Then run again
 to optimize the classification on the class of your choice. Finally, set <code>save: 1</code> and <code>optimize_coeffs: 0</code>
 in <code>configfile.ini</code> and run <code>python3 classify_new.py</code> a last time.
 
-To plot the distributions computed by the first command, try:
+Input distributions and density estimations will be automatically plotted in the directory <code>dirref</code>.
 
 <code>python3 plotdistrib.py</code>
 

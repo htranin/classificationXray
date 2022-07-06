@@ -23,7 +23,7 @@ Then run again
 to optimize the classification on the class of your choice. Finally, set <code>save: 1</code> and <code>optimize_coeffs: 0</code>
 in <code>configfile.ini</code> and run <code>python3 classify_new.py</code> a last time.
 
-Input distributions and density estimations will be automatically plotted in the directory <code>dirref</code>.
+Input distributions and density estimations will be automatically plotted and saved to the directory <code>dirref</code>.
 
 <code>python3 plotdistrib.py</code>
 

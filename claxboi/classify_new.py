@@ -18,11 +18,14 @@ import os
 import makedistrib
 from scipy.optimize import basinhopping, minimize, differential_evolution
 import yaml
+from tqdm import tqdm
 
 
 configfile = "configfile.ini"
 with open(configfile) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
+
+rec_allpty = False
 
 dirref = config['dirref']
 # directory in which are (or will be) stored the probability densities (.dat files)
@@ -37,6 +40,9 @@ if save:
 categories = config['categories']
 ncat = len(categories)
 global_coeffs = config['global_coeffs']
+if len(global_coeffs)!=len(categories)+1:
+    print("ERROR: global_coeffs must be of size %d in %s"%(len(categories)+1,configfile))
+    sys.exit()
 # 1 weighting coefficient for missing values + 1 per category
 
 # Prior proportions of the different classes (here AGN, Star, XRB, CV)
@@ -46,7 +52,8 @@ trueprop = config['trueprop'] #from CLAXSON users
 
 compute_distrib = config['compute_distrib']
 # compute the probability densities of the input catalog thanks to its known objects. See line "makedistrib.make(...)"
-plotdistrib = 0
+plotdistrib = 1
+# plot input distributions and KDE and save them to dirref
 
 custom_pty = config['custom_pty']
 # [Property, Class] for which the probability density is customed, to limit bias
@@ -67,19 +74,32 @@ misval_strategy = 'splitpba'
 # ignore: L(class|missing value)=cst for every class. Less performant.
 
 
-if len(sys.argv) > 1 and sys.argv[1][-3:] == 'csv':
+if len(sys.argv) > 1 and sys.argv[1].split(".")[-1] in ['csv','fits']:
     filename = sys.argv[1]
 else:
     filename = config['filename']
+    
 
 print('input catalog:', filename)
+
+if filename[-4:]=='fits':
+    from astropy.table import Table
+    from astropy.io import ascii
+    t = Table.read(filename)
+    filename = filename.replace("fits","csv")
+    ascii.write(t, filename, format='csv', overwrite=True)
+    
+    
 inputfilename = filename.replace('csv', 'in')
 # file detailing how to handle each column
 
 # Load the catalog
+print('loading the catalog')
 SourcesCsv = np.genfromtxt(filename, delimiter=',', names=True)
+print('catalog loaded')
 icol_name = 0
 Names = np.genfromtxt(filename, usecols=[icol_name], delimiter=',', names=True, dtype=None, encoding='utf-8')[SourcesCsv.dtype.names[icol_name]]
+print('identifiers loaded')
 
 # Load the file detailing how to handle each column
 if os.path.isfile(inputfilename):
@@ -104,7 +124,7 @@ else:
     print('\nto_use:(no=0|yes=1)\nweight:(auto=""|fixed=[float])\tcategory:('+'|'.join('%s=%d'%(categories[i], i+1) for i in range(ncat))+')\npba_ifnull:(no=0|yes=1)\tscale:(lin=1|log=2|{x/(1+|x|)}=0)')
     for icol in range(len(SourcesCsv.dtype.names)):
         col=SourcesCsv.dtype.names[icol]
-        print('\t\t=== %s ===\t\t(%d/%d)'%(col, icol, len(SourcesCsv.dtype.names)))
+        print('\t\t=== %s ===\t\t(%d/%d)'%(col, icol+1, len(SourcesCsv.dtype.names)))
         u = 0
         while not(u in ['0', '1', '']):
             u = input('to_use [0]? ')
@@ -112,8 +132,9 @@ else:
             u = 1
             not_filled = 1
             while not_filled:
-                w, c, p, s = input('%s weight, category, pba_ifnull, scale? '%col).split(',')
+                input_command = input('%s weight, category, pba_ifnull, scale? '%col).split(',')
                 try:
+                    w, c, p, s = input_command
                     w, c, p, s = w.strip(), int(c), int(p), int(s)
                     if w == '':
                         w = 'auto'
@@ -121,6 +142,7 @@ else:
                         w = str(float(w))
                     not_filled=0
                 except:
+                    print("error in your input, please enter the 4 parameters separated by commas")
                     pass            
         else:
             u = 0
@@ -162,7 +184,9 @@ if misval_strategy == 'dumbval':
 
 if compute_distrib:
     # Estimate the probability densities and save them in dirref
-    makedistrib.make(SourcesCsv, properties=properties, Classes=Classes, equipart=0, fraction=1, plotdistrib=plotdistrib, custom_pty=custom_pty, dirout=dirref, dumb=(misval_strategy == 'dumbval'))
+    print('estimating densities...')
+    makedistrib.make(SourcesCsv, properties=properties, Classes=Classes, equipart=0, fraction=1, plotdistrib=plotdistrib, custom_pty=custom_pty, dirout=dirref, dumb=(misval_strategy == 'dumbval'), scale=inputfile['scale'])
+    print('densities estimated')
 
 if misval_strategy == 'ignore':
     for p in properties:
@@ -196,7 +220,7 @@ if equipart:
     Names = Names[selection]
     coeffs = coeffs[:,selection]
     classes = SourcesCsv['class']
-    print('counts of each class in the properly proportioned sample:', [sum(classes == C) for C in Classes])
+    print('counts of each class in the properly proportioned sample:', [sum(classes == cl) for cl in Classes])
 
 
 # Functions for treatment of the probability densities
@@ -227,16 +251,21 @@ for ip in range(nprop):
 prediction = np.empty(len(classes))
 predictionDaria = np.empty(len(classes))
 
+
+print('detecting missing values...')
 # Spot all missing values
 SourcesNan = np.isnan(np.vstack([SourcesCsv[p] for p in properties]).T)
 print("total number of missing values:", sum(sum(SourcesNan)))
 
 # 3D (Class, Pty, Source) Matrix of likelihoods L(class|pty) for each source
 ainterp = np.array([np.array([np.interp(SourcesCsv[properties[ip]], Distrib[ic][ip][:,0], Distrib[ic][ip][:,1], left=1, right=1) for ip in range(nprop)]) for ic in range(ncla)])
+print("likelihoods computed for non-missing values")
 
 # List of vectors flagging source indexes, one per class
 # 3 sources (AGN, nan, Star) => [[1, 0, 0], [0, 0, 1], [0, 0, 0], [0, 0, 0]]
 refsample = [classes == Classes[ic] for ic in range(ncla)]
+
+## TO BE MADE FASTER
 if not(equipart):
     ifnullpba = np.ones(np.shape(ainterp))
     # properties for which a pba_if_null is computed = all properties
@@ -256,7 +285,7 @@ if not(equipart):
     np.savetxt(filename.replace('.csv', '_ifnullpba.csv'), np.concatenate(ifnullpba), delimiter=',')
 else:
     ifnullpba = np.loadtxt(filename.replace('.csv', '_ifnullpba.csv'), delimiter=',').reshape((ncla, nprop, -1))[:,:,selection]
-
+print("likelihoods computed for missing values")
 
 
 # List of vectors flagging property indexes, one per category
@@ -269,6 +298,7 @@ expo = [[np.mean(coeffs[~SourcesNan[isrc]*icat[inputfile['category'][ip]-1], isr
 # 3D (Source, Pty, Class) Matrix of weighted likelihoods
 Pbgood = [[ainterp[ic, ~SourcesNan[isrc], isrc]**(coeffs[~SourcesNan[isrc], isrc]/expo[isrc])*ifnullpba[ic, ~SourcesNan[isrc], isrc] for ic in range(ncla)] for isrc in range(len(SourcesCsv))] #later imp: try without multiplying by ifnullpba[,~SourcesNan[isrc],]
 Pbnull = [[ifnullpba[ic, SourcesNan[isrc], isrc] for ic in range(ncla)] for isrc in range(len(SourcesCsv))]
+print("\nclassifier ready!\n")
 
 
 # Computes the posterior probability of a source,
@@ -277,8 +307,8 @@ def proba_fast(isrc, global_weights):
     # alpha weigh missing values
     alpha, global_weights = global_weights[0], global_weights[1:]
     pbCl = np.ones(ncla)
-    pbgood = Pbgood[isrc]
-    pbnull = Pbnull[isrc]
+    pbgood = Pbgood[isrc] 
+    pbnull = Pbnull[isrc] # lenght: ncat, ncol = number of missing values
     pbCats = []
 
     for cat in range(ncat): #location, spectrum, multiwv, variabty
@@ -296,6 +326,8 @@ def proba_fast(isrc, global_weights):
     for cat in range(ncat):
         pbCat2, gw2 = pbCats[:], list(global_weights[:])
         pbCat2.pop(cat)
+        
+                
         gw2.pop(cat)
         pbCl2 = np.product(np.array(pbCat2), axis=0)**(8/sum(gw2))
         pbCl2 = pbCl2*trueprop
@@ -339,8 +371,12 @@ def proba_fast(isrc, global_weights):
         return [pbCl]
     else:
         weights_cat = [np.nansum(coeffs[inputfile['category'] == cat+1, isrc]) for cat in range(ncat)]
-        recordPb = np.concatenate(pbCats)  #np.concatenate(list(np.concatenate((ainterp[:,:,isrc]/sum(ainterp[:,:,isrc]), ifnullpba[:,:,isrc]/sum(ifnullpba[:,:,isrc]), [coeffs[:,isrc]])).T)+pbCats)
-
+        
+        if rec_allpty:
+            recordPb = np.concatenate(list(np.concatenate((ainterp[:,:,isrc]/sum(ainterp[:,:,isrc]), ifnullpba[:,:,isrc]/sum(ifnullpba[:,:,isrc]))).T)+pbCats) #, [coeffs[:,isrc]]
+        else:
+            recordPb = np.concatenate(pbCats)  
+            
         # comment ", recordPb" to save memory
         return pbCl, weights_cat, recordPb, alt
 
@@ -358,6 +394,11 @@ dtypes = [('Name', 'U22'), ('class', 'i4'), ('prediction', 'i4'), ('alt', 'U24')
 #for ip in range(nprop):
 #    dtypes += [('PbaC%d_%s'%(Classes[ic], properties[ip]), 'f8') for ic in range(ncla)]+[('PbaC%d_Existence%s'%(Classes[ic], properties[ip]), 'f8') for ic in range(ncla)]+[('Weight_%s'%properties[ip], 'f8')]
 ###
+if rec_allpty:
+    for pty in properties:
+        dtypes += [('PbaC%d_%s'%(Classes[ic],pty), 'f8') for ic in range(ncla)]
+        dtypes += [('PbaC%d_ex_%s'%(Classes[ic],pty), 'f8') for ic in range(ncla)]
+    
 for cat in categories:
     dtypes += [('PbaC%d_%s'%(Classes[ic], cat), 'f8') for ic in range(ncla)]
 
@@ -374,6 +415,8 @@ def f1score(global_weights, outfile=fout):
     p1C1 = 0 #prediction == class == C
     p1C0 = 0 #predicted as C but not C
     p0C1 = 0 #C but not predicted as C
+    nbct = np.zeros((ncla,3))
+    
 
     #lpbCl=np.array([proba_fast(i, global_weights)[0].argmax() for i in range(len(SourcesCsv))])
     #prc = np.array([sum(lpbCl == c && classes == c)/(sum(lpbCl == c) for c in Classes])
@@ -381,16 +424,35 @@ def f1score(global_weights, outfile=fout):
     #f1 = np.mean(2/(1/prc+1/rec)) #f1 averaged over all classes
     #print(' '.join(['%.3f'%gw for gw in global_weights]+list(rec)+list(prc)+list(f1)), file=outfile)
     #return f1
-    
-    for i in range(len(SourcesCsv)):
-        pbCl = proba_fast(i, global_weights)[0].argmax()
-        p1C1 += (Classes[pbCl] == C and classes[i] == C)
-        p0C1 += (Classes[pbCl] != C and classes[i] == C)
-        for oc in Classes[Classes != C]:
-            p1C0 += (Classes[pbCl] == C and classes[i] == oc)
+
+    if C==-1:
+        for i in range(len(SourcesCsv)):
+            pbCl = proba_fast(i, global_weights)[0].argmax()
+            
+            if classes[i]!=Classes[pbCl]:
+                nbct[int(classes[i]),1]+=1
+                nbct[int(pbCl),2]+=1
+            else:
+                nbct[int(classes[i]),0]+=1
+                
+        # mean f1-score: 
+        avg = np.mean(2*nbct[:,0]/(2*nbct[:,0]+nbct[:,1]+nbct[:,2]))
+    else:    
+        
+        for i in range(len(SourcesCsv)):
+            pbCl = proba_fast(i, global_weights)[0].argmax()
+            p1C1 += (Classes[pbCl] == C and classes[i] == C)
+            p0C1 += (Classes[pbCl] != C and classes[i] == C)
+            for oc in Classes[Classes != C]:
+                p1C0 += (Classes[pbCl] == C and classes[i] == oc)
+            
+        avg = 2*p1C1/(2*p1C1+p0C1+p1C0)
+
 
     print(' '.join(['%.3f'%gw for gw in global_weights]), p0C1, p1C1, p1C0, 2*p1C1/(2*p1C1+p0C1+p1C0), file=outfile)
-    return 1-2*p1C1/(2*p1C1+p0C1+p1C0)
+
+    
+    return 1-avg #1-2*p1C1/(2*p1C1+p0C1+p1C0)
 
 
 # Define 1 weighting coefficient for missing values (usually 1) + 1 per category
@@ -404,27 +466,34 @@ def f1score(global_weights, outfile=fout):
 # global_coeffs=[1, 9, 4, 8, 5] #DR10 6 classes #2
 # global_coeffs=[1, 7.5, 2.5, 9, 7.5] #DR10 binary classif
 
+## TO BE MADE FASTER
 if optimize_coeffs:
-    fout.write('# pba_null  location  hardness  spectrum  multiwavelength  variability  FN TP FP f1\n')
+    fout.write('# pba_null  %s FN TP FP f1\n'%(' '.join(categories)))
     # Coeff optimizition, to maximize the f1-score of class C
+    print('optimizing the classifier on class %d'%C)
     try:
         res = differential_evolution(f1score, [(len(global_coeffs)-len(categories))*[0,1]]+(len(categories))*[[0,10]], disp=1)
         print(res.x, res.fun, res.message, res.nit)
         global_coeffs = res.x
     except:
         fout.close()
-        outfile2 = '4XMMDR10_toclassify_sample_optimsteps.dat'
+        outfile2 = filename.replace('.csv', '_optimsteps.dat')
         evol_coeffs = np.loadtxt(outfile2)
         global_coeffs = evol_coeffs[np.argmax(evol_coeffs[:,-1])][:-4]
         
     str_coeffs = str(list(np.round(global_coeffs, 2)))
     os.system('sed -i "s/global_coeffs:.*/global_coeffs: %s/g" %s'%(str_coeffs, configfile))
-    
+    os.system('sed -i "s/optimize_coeffs:.*/optimize_coeffs: 0/g" %s'%configfile)
+    os.system('sed -i "s/save:.*/save: 1/g" %s'%configfile)
+    print('Weighting coefficients saved to %s'%configfile)
+    print('Modifying %s for next run...'%configfile)
     fout.close()
 
 # Compute the posterior probability of each class for every source
+
+print('starting classification')
     
-for i in range(len(SourcesCsv)):
+for i in tqdm(range(len(SourcesCsv))):
     if save:
         # comment ", recordPb =" to save memory
         pbCl, weights_cat, recordPb, alt = proba_fast(i, global_coeffs)#, recordPb, alt
@@ -467,20 +536,26 @@ for i in range(ncla):
         results[i,j] = sum((classes == Classes[j])*(prediction == Classes[i]))
 
 results[:-1,-1] = [100*round(results[i,i]/sum(results[:,i]), 3) for i in range(ncla)]                        # Retrieval Fraction
-results[-1,:-1] = [100*round(1-results[i,i]/sum(results[i,:-1]), 3) for i in range(ncla)]# False Positive rate
+results[-1,:-1] = [100*round(1-results[i,i]/sum(results[i,:-1]), 3) for i in range(ncla)]  # False Positive rate
 
 print('Truth --->\tC'+'\tC'.join(Classes.astype(str))+'\tretrieval fraction (%)')
 for i in range(ncla+1):
     if i < ncla:
         print('P%s'%str(Classes[i]), '\t\t'+'\t'.join(results[i,:-1].astype(int).astype(str))+'\t%.1f'%results[i,-1])
     else:
-        print('false pos. rate\t'+'\t'.join(['%.1f'%r for r in results[i,:-1]]))
-
-
-        
+        print('true pos. rate\t'+'\t'.join(['%.1f'%(100-r) for r in results[i,:-1]]))
+        print('corrected t.p.r\t'+'\t'.join(['%.1f'%(100*trueprop[j]*results[j,j]/sum(results[:ncla,j])/sum(trueprop*results[j,:ncla]/sum(results[:ncla,:ncla]))) for j in range(ncla)]))
+              
+print("f1-scores: "+", ".join(["%.3f"%(2/(sum(results[:ncla,i])/results[i,i]+1/(trueprop[i]*results[i,i]/sum(results[:ncla,i])/sum(trueprop*results[i,:ncla]/sum(results[:ncla,:ncla]))))) for i in range(ncla)]))
+    
+#LATER IMPLEMENTATION: precision computation
+#def prec(i):
+#    return truprop[i]*results[i,i]/np.sum(results,axis=0)[i]/sum(trueprop*results[i]/np.sum(results,axis=0))    
+    
+    
 if save:
     # Save these results
-    with open(fileout.replace('csv', 'metrics'), 'w') as f:
+    with open("".join(fileout.split('.')[:-1])+'.metrics', 'w') as f:
         print('trueprop = %s\t global_coeffs = %s'%(str(trueprop), str(global_coeffs)), file=f)
         print(', '.join(['NC%s=%d'%(Classes[ic], sum(classes == Classes[ic])) for ic in range(ncla)]), file=f)
         print(', '.join(['NpC%s=%d'%(Classes[ic], sum(prediction == Classes[ic])) for ic in range(ncla)]), file=f)
@@ -491,9 +566,33 @@ if save:
             else:
                 print('false pos. rate\t'+'\t'.join(['%.1f'%r for r in results[i,:-1]]), file=f)
 
-    # comment (2*ncla+1) and (ncla+1) (replace by 1 and 0) if recordPb is commented above
-    np.savetxt(fileout, classification, delimiter=',', 
-               header=','.join([dt[0] for dt in dtypes]), 
-               fmt=['%22s', '%2d', '%2d', '%24s', '%.3e', '%.3e', '%2d']+(ncla+ncat*(ncla+1)+0*nprop)*['%.3e']) #(ncla+1) (2*ncla+1)
 
-        
+    # comment (2*ncla+1) and (ncla+1) (replace by 1 and 0) if recordPb is commented above
+    print('saving...')
+
+    fitsfile = 0
+    if fileout.split('.')[-1]=='fits':
+        fileout = ''.join(fileout.split('.')[:-1])+'.csv'
+        fitsfile = True
+    
+
+    if rec_allpty:
+        fmt = ['%22s', '%2d', '%2d', '%24s', '%.3e', '%.3e', '%2d']+(ncla+ncat*(ncla+1)+2*ncla*nprop)*['%.3e'] #(ncla+1) (2*ncla+1)
+        np.savetxt(fileout, classification, delimiter=',', 
+                   header=','.join([dt[0] for dt in dtypes]), 
+                   fmt = fmt)
+    else:
+        fmt=['%22s', '%2d', '%2d', '%24s', '%.3e', '%.3e', '%2d']+(ncla+ncat*(ncla+1)+0*nprop)*['%.3e'] #(ncla+1) (2*ncla+1)
+        np.savetxt(fileout, classification, delimiter=',', 
+                   header=','.join([dt[0] for dt in dtypes]), 
+                   fmt = fmt)
+
+    
+    if fitsfile:
+        from astropy.table import Table
+        tcl = Table.read(fileout, format='ascii.csv')
+        tcl['alt'].fill_value = ''
+        tcl.write(''.join(fileout.split('.')[:-1])+'.fits', overwrite=True)
+        os.remove(fileout)
+
+

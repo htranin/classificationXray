@@ -40,7 +40,7 @@ To obtain a good purity-completeness trade-off, NWAY features a code to calibrat
 For each pair of X-ray / multiwavelength catalog, a file is saved containing the candidate associations along with their NWAY probabilities.
 Each X-ray source is then assigned a single (or no) optical (resp. infrared) counterpart, i.e. the best-matching reasonable counterpart (highest <code>p_i</code> and <code>p_any>threshold</code>) in the first multiwavelength catalog in which it was found (thus the order of <code>cds_tables</code> _does_ count).
 
-The output of the code if a catalog "..._with_counterparts.fits" containing the same number of entries as the input catalog.
+The output of the code is a catalog "..._with_counterparts.fits" containing the same number of entries as the input catalog.
 
 ### Documentation on <code>auto_xlinks.py</code>
 
@@ -48,7 +48,7 @@ This program identifies common sources in different X-ray catalogues, assigning 
 
 Before running it, you need to change the variables <code>xmmdet</code>, <code>chadet</code> and <code>swidet</code> to match your local XMM, Chandra and Swift catalogs of detections.
 
-The output of the code if a catalog "..._with_counterparts_x.fits" containing the same number of entries as the input catalog.
+The output of the code is a catalog "..._with_counterparts_x.fits" containing the same number of entries as the input catalog.
 
 For more advanced X-ray-to-X-ray matches, please use the STONKS pipeline (https://github.com/ErwanQuintin/STONKS).
 
@@ -62,7 +62,7 @@ Extragalactic sources are searched in nearby galaxies using the GLADE (2016 vers
 
 At this stage, the quantities <code>logFxFb, logFxFr</code> and <code>logFxFw1, logFxFw2</code> are computed, representing the logarithm of the ratio between X-ray and optical (Gaia BP and RP bands) fluxes, and the ratio between X-ray and infrared (WISE W1 and W2 bands) fluxes, respectively.
 
-The output of the code if a catalog "..._with_counterparts_x_loc.fits" containing the same number of entries as the input catalog.
+The output of the code is a catalog "..._with_counterparts_x_loc.fits" containing the same number of entries as the input catalog.
 
 ### Documentation on <code>auto_classes.py</code>
 
@@ -84,6 +84,7 @@ Columns <code>isAGN, isStar, isXRB</code> and <code>isCV</code> are also increas
 
 When a source is unambiguously identified in the set of Vizier catalogs (meaning one of the <code>is...</code> column is non-zero and all other are zero), the value encoding the source type (which is by default, 0: QSO, 1: Star, 2: gal_XRB, 3: CV, 4: AGN, 5: ex_xrb, 6: extended) is stored in the column <code>class</code>, later used for training. Unidentified sources have no value (NULL / nan) in the <code>class</code> column.
 
+The output of the code is a catalog "..._with_counterparts_x_loc_typ.fits" containing the same number of entries as the input catalog.
 
 ### Documentation on <code>classify_new.py</code>
 

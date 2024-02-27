@@ -1,3 +1,4 @@
+#!/home/hugo/anaconda3/bin/python3
 ### ----------------------------------------------
 # Usage: python3 classify.py
 # Please edit the file configfile.ini before running the command above
@@ -11,21 +12,22 @@
 totest = []
 
 import numpy as np
-import scipy.stats as st
 import sys
-import select
 import os
 import makedistrib
-from scipy.optimize import basinhopping, minimize, differential_evolution
+from scipy.optimize import differential_evolution
 import yaml
 from tqdm import tqdm
 
+if len(sys.argv)>1 and sys.argv[1][-3:]=="ini":
+    configfile = sys.argv[1]
+else:
+    configfile = "configfile.ini"
 
-configfile = "configfile.ini"
 with open(configfile) as file:
     config = yaml.load(file, Loader=yaml.FullLoader)
 
-rec_allpty = False
+rec_allpty = config['record_marginal_pba']
 
 dirref = config['dirref']
 # directory in which are (or will be) stored the probability densities (.dat files)
@@ -77,17 +79,60 @@ misval_strategy = 'splitpba'
 if len(sys.argv) > 1 and sys.argv[1].split(".")[-1] in ['csv','fits']:
     filename = sys.argv[1]
 else:
-    filename = config['filename']
-    
+    filename = config['filename']    
+
 
 print('input catalog:', filename)
 
-if filename[-4:]=='fits':
+add_init_cols = 0
+if config['initfilename']!="":
+    initfname = config['initfilename']
+    if not(os.path.isfile(initfname)):
+        print('Warning: ignoring initial file %s (not found)'%initfname)
+    elif filename.split(".")[-1][:3]!='fit':
+        print("Warning: ignoring initial file %s (input catalog has to be a .fits file)"%initfname)
+    else:
+        add_init_cols = 1
+
+if config['keep_descriptions']:
+    if config['initfilename']=="":
+        print('Warning: unable to preserve columns descriptions (You must fill in the initfilename field in configfile)') 
+    elif config['initfilename'].split(".")[-1][-3:]!="csv":
+        print('Warning: unable to preserve columns descriptions (initial file has to be an ECSV file)') 
+            
+
+if filename.split(".")[-1][:3]=="fit":
     from astropy.table import Table
     from astropy.io import ascii
     t = Table.read(filename)
     filename = filename.replace("fits","csv")
-    ascii.write(t, filename, format='csv', overwrite=True)
+    if add_init_cols:
+        if not(config['keep_descriptions']) or initfname.split(".")[-1][-3:]!="csv":
+            initcat = Table.read(initfname)
+            srcid,i1,i2 = np.intersect1d(np.asarray(t[t.colnames[0]]),np.asarray(initcat[initcat.colnames[0]]), return_indices=1)
+            t = t[i1]
+            print("adding columns to input catalog:")
+            for newcol in [c for c in initcat.colnames[1:] if ("hr" in c.lower() or "ext" in c.lower()) and not(c in t.colnames)]:
+                print(newcol)
+                t[newcol] = initcat[newcol][i2]
+            if "SC_EXTENT" in t.colnames:
+                t['class'][t['SC_EXTENT']>0]= 6 #extended
+        else:
+            initcat = ascii.read(initfname)
+            srcid,i1,i2 = np.intersect1d(np.asarray(t[t.colnames[0]]),np.asarray(initcat[initcat.colnames[0]]), return_indices=1)
+            t = t[i1]
+            print("adding columns to input catalog:")
+            for newcol in [c for c in initcat.colnames[1:] if ("hr" in c.lower() or "ext" in c.lower()) and not(c in t.colnames)]:
+                print(newcol)
+                t[newcol] = initcat[newcol][i2]
+            if "SC_EXTENT" in t.colnames:
+                t['class'][t['SC_EXTENT']>0]= 6 #extended
+            
+    if 0:
+        if not(add_init_cols) or not(config['keep_descriptions']) or initfname.split(".")[-1][-3:]!="csv": 
+            ascii.write(t, filename, format='csv', overwrite=True)
+        else:
+            ascii.write(t, filename, format='ecsv', overwrite=True)
     
     
 inputfilename = filename.replace('csv', 'in')
@@ -266,10 +311,10 @@ print("likelihoods computed for non-missing values")
 refsample = [classes == Classes[ic] for ic in range(ncla)]
 
 ## TO BE MADE FASTER
-if not(equipart):
+if not(equipart) and compute_distrib:
     ifnullpba = np.ones(np.shape(ainterp))
     # properties for which a pba_if_null is computed = all properties
-    ifnullpba = np.array([abs(SourcesNan-(sum(1.-SourcesNan[refsample[ic]])/sum(refsample[ic])+0.001)/1.002).T for ic in range(ncla)])
+    ifnullpba = np.array([np.abs(SourcesNan-(np.sum(1.-SourcesNan[refsample[ic]])/np.sum(refsample[ic])+0.001)/1.002).T for ic in range(ncla)]).T
     # 0.001 to prevent zero probabilities
     #later imp: ifnullpba[:, inputfile['pba_ifnull'] == 0]=1
     #later imp: ifnullpba[np.isnan(SourcesCsv['RA_ir']), properties.index('logFxFw1')]=1
@@ -282,22 +327,35 @@ if not(equipart):
     #later imp: do not use nullpba if a counterpart was found but no flux is available
 
     #print(inputfile['property'][inputfile['pba_ifnull'] == 0])
-    np.savetxt(filename.replace('.csv', '_ifnullpba.csv'), np.concatenate(ifnullpba), delimiter=',')
-else:
-    ifnullpba = np.loadtxt(filename.replace('.csv', '_ifnullpba.csv'), delimiter=',').reshape((ncla, nprop, -1))[:,:,selection]
+    
+    
+    #np.savetxt(filename.replace('.csv', '_ifnullpba.csv'), np.concatenate(ifnullpba), delimiter=',')
+    np.savetxt(filename.replace('.csv', '_ifnullpba.csv'), SourcesNan, delimiter=',', header=','.join(list(properties)))
+    
+elif equipart:
+    sourcesnan = np.loadtxt(filename.replace('.csv', '_ifnullpba.csv'), delimiter=',')[selection,:]
+    ifnullpba = np.array([np.abs(sourcesnan-(np.sum(1.-sourcesnan[refsample[ic]])/np.sum(refsample[ic])+0.001)/1.002).T for ic in range(ncla)]).T
+    #ifnullpba = np.loadtxt(filename.replace('.csv', '_ifnullpba.csv'), delimiter=',').reshape((-1, ncla, nprop))[selection,:,:]
+else:    
+    sourcesnan = np.loadtxt(filename.replace('.csv', '_ifnullpba.csv'), delimiter=',')
+    ifnullpba = np.array([np.abs(sourcesnan-(np.sum(1.-sourcesnan[refsample[ic]])/np.sum(refsample[ic])+0.001)/1.002).T for ic in range(ncla)]).T
+    
 print("likelihoods computed for missing values")
 
+
+ifnullpba = np.rollaxis(ifnullpba,0,3)
+print("(axes rolled)")
 
 # List of vectors flagging property indexes, one per category
 icat = [inputfile['category'] == cat+1 for cat in range(ncat)]
 
 
-expo = [[np.mean(coeffs[~SourcesNan[isrc]*icat[inputfile['category'][ip]-1], isrc]) for ip in np.arange(nprop)[~SourcesNan[isrc]]] for isrc in range(len(SourcesCsv))]
-
+#expo = [[np.mean(coeffs[~SourcesNan[isrc]*icat[inputfile['category'][ip]-1], isrc]) for ip in np.arange(nprop)[~SourcesNan[isrc]]] for isrc in range(len(SourcesCsv))]
+expo = np.ones(len(SourcesCsv))
 
 # 3D (Source, Pty, Class) Matrix of weighted likelihoods
-Pbgood = [[ainterp[ic, ~SourcesNan[isrc], isrc]**(coeffs[~SourcesNan[isrc], isrc]/expo[isrc])*ifnullpba[ic, ~SourcesNan[isrc], isrc] for ic in range(ncla)] for isrc in range(len(SourcesCsv))] #later imp: try without multiplying by ifnullpba[,~SourcesNan[isrc],]
-Pbnull = [[ifnullpba[ic, SourcesNan[isrc], isrc] for ic in range(ncla)] for isrc in range(len(SourcesCsv))]
+Pbgood = [[ainterp[ic, ~SourcesNan[isrc], isrc]**(coeffs[~SourcesNan[isrc], isrc]/expo[isrc])*ifnullpba[ ~SourcesNan[isrc], ic, isrc] for ic in range(ncla)] for isrc in range(len(SourcesCsv))] #later imp: try without multiplying by ifnullpba[,~SourcesNan[isrc],]
+Pbnull = [[ifnullpba[SourcesNan[isrc], ic, isrc] for ic in range(ncla)] for isrc in range(len(SourcesCsv))]
 print("\nclassifier ready!\n")
 
 
@@ -572,7 +630,7 @@ if save:
 
     fitsfile = 0
     if fileout.split('.')[-1]=='fits':
-        fileout = ''.join(fileout.split('.')[:-1])+'.csv'
+        fileout = '.'.join(fileout.split('.')[:-1])+'.csv'
         fitsfile = True
     
 
@@ -580,12 +638,40 @@ if save:
         fmt = ['%22s', '%2d', '%2d', '%24s', '%.3e', '%.3e', '%2d']+(ncla+ncat*(ncla+1)+2*ncla*nprop)*['%.3e'] #(ncla+1) (2*ncla+1)
         np.savetxt(fileout, classification, delimiter=',', 
                    header=','.join([dt[0] for dt in dtypes]), 
-                   fmt = fmt)
+                   comments='', fmt = fmt)
     else:
         fmt=['%22s', '%2d', '%2d', '%24s', '%.3e', '%.3e', '%2d']+(ncla+ncat*(ncla+1)+0*nprop)*['%.3e'] #(ncla+1) (2*ncla+1)
         np.savetxt(fileout, classification, delimiter=',', 
                    header=','.join([dt[0] for dt in dtypes]), 
-                   fmt = fmt)
+                   comments='', fmt = fmt)
+        
+        output = ascii.read(fileout)
+        inputcat = ascii.read(filename)
+        srcid,i1,i2 = np.intersect1d(np.asarray(output[output.colnames[0]]),np.asarray(inputcat[inputcat.colnames[0]]), return_indices=1)
+        output = output[i1]
+        inputcat = inputcat[i2]
+        inputcat['prediction_name'] = [config['classnames'][p] for p in output['prediction']]
+        for c in output.colnames[2:7+ncla]+output.colnames[7+ncat+ncla:]: # without weights fields
+            inputcat[c] = output[c]
+            
+        descriptions = {"prediction":"Output class, given by the classification",
+                        "alt":"Alternative classifications if a property category is ignored",
+                        "outlier":"Outlier measure",
+                        "ClMargin":"Classification margin, i.e. P(prediction)-P(not(prediction))",
+                        "N_missing":"Number of fields having a missing value"}
+        for i in range(ncla):
+            descriptions["PbaC%d"%i] = "Posterior probability that the source is %s"%config['classnames'][i]
+            for j in config['categories']:
+                descriptions["PbaC%d_%s"%(i,j)] = "Combined likelihood of %s properties for the class %s"%(j,config['classnames'][i])
+    
+        for c in inputcat.colnames:
+            if c in descriptions.keys():
+                inputcat[c].description = descriptions[c]
+            
+        
+        
+        ascii.write(inputcat, '.'.join(fileout.split('.')[:-1])+'_with_input.csv',format='ecsv', overwrite=True)
+            
 
     
     if fitsfile:
@@ -593,6 +679,6 @@ if save:
         tcl = Table.read(fileout, format='ascii.csv')
         tcl['alt'].fill_value = ''
         tcl.write(''.join(fileout.split('.')[:-1])+'.fits', overwrite=True)
-        os.remove(fileout)
+        #os.remove(fileout)
 
 

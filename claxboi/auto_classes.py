@@ -13,6 +13,7 @@ from auto_nway import find_id_ra_dec
 import os
 import sys
 
+os.chdir('/home/htranin/')
 
 # IDENTIFICATION
 
@@ -20,7 +21,7 @@ import sys
 if len(sys.argv)>1:
     input_fname = sys.argv[1]
 else:
-    input_fname = 'CSC2_with_counterparts_x_loc.fits'
+    input_fname = '4XMM_with_counterparts_loc.fits'
     
 xname = input_fname.replace('_',' ').replace('-',' ').split()[0]
 
@@ -37,7 +38,7 @@ ncol = len(input_table.colnames)
 
 #List of external catalogues
 
-vizcat = {'AGN':['J/ApJS/221/12/table1', 'VII/258/vv10', 'VII/283/catalog'],
+vizcat = {'AGN':['J/ApJS/221/12/table1', 'VII/258/vv10'],#	VII/290/catalog
           'Star':['I/280B/ascc'],
           'XRB':['B/cb/lmxbdata','J/A+A/469/807/lmxb','J/ApJ/689/983/table6','J/ApJ/662/525/Xbin','J/A+A/533/A33/table6',
                  'J/A+A/455/1165/table1','J/MNRAS/419/2095/hmxb','J/MNRAS/466/1019/table2',
@@ -65,7 +66,7 @@ for typ in vizcat.keys():
         res = fits.open('result.fits')[1].data
         if cat=="VII/283/catalog":
             res = res[[res['Qpct'][i]>80 and res[res.names[5+ncol]][i].replace('WISE','J')[0]=="J" for i in range(len(res))]]
-        i,i1,i2 = np.intersect1d(input_table[id_c1],res[id_c1],return_indices=1)
+        i,i1,i2 = np.intersect1d(np.asarray(input_table[id_c1]),res[id_c1],return_indices=1)
         input_table['is%s'%typ][i1] += 2**vizcat[typ].index(cat)
 
 cmd = 'stilts cdsskymatch in="%s" ra="%s" dec="%s" cdstable="simbad" find=best out="result.fits" radius=3 ocmd="select angDist<3*%s+%.1f"'%(
@@ -76,15 +77,25 @@ res = fits.open('result.fits')[1].data
 for typ in simcat.keys():
     for typ2 in simcat[typ]:
         res2 = res[res['main_type']==typ2]
-        i,i1,i2 = np.intersect1d(input_table[id_c1],res2[id_c1],return_indices=1)
+        i,i1,i2 = np.intersect1d(np.asarray(input_table[id_c1]),res2[id_c1],return_indices=1)
         input_table['is%s'%typ][i1] += 1024
 
 input_table['class'] = np.nan
-input_table['class'][np.logical_and(abs(input_table['isAGN']-512)!=512,input_table['isStar']+input_table['isXRB']+input_table['isCV']==0)] = 0
-input_table['class'][np.logical_and(abs(input_table['isStar']-512)!=512,input_table['isAGN']+input_table['isXRB']+input_table['isCV']==0)] = 1                           
-input_table['class'][np.logical_and(abs(input_table['isXRB']-512)!=512,input_table['isStar']+input_table['isAGN']+input_table['isCV']==0)] = 2
-input_table['class'][np.logical_and(abs(input_table['isCV']-512)!=512,input_table['isStar']+input_table['isXRB']+input_table['isAGN']==0)] = 3
+input_table['class'][np.logical_and(abs(input_table['isAGN']-512)!=512,input_table['isStar']+input_table['isXRB']+input_table['isCV']==0)] = 0 # AGN
+input_table['class'][np.logical_and(abs(input_table['isStar']-512)!=512,input_table['isAGN']+input_table['isXRB']+input_table['isCV']==0)] = 1 # star                     
+input_table['class'][np.logical_and(abs(input_table['isXRB']-512)!=512,input_table['isStar']+input_table['isAGN']+input_table['isCV']==0)] = 2 # XRB
+input_table['class'][np.logical_and(abs(input_table['isCV']-512)!=512,input_table['isStar']+input_table['isXRB']+input_table['isAGN']==0)] = 3 # cataclysmic variable
+
+if "Separation_GLADE" in input_table.colnames:
+    input_table['class'][np.logical_and(input_table['Separation_GLADE']<1.5,input_table['class']==0)] = 4 #nearby galaxy AGN or background AGN behind a foreground galaxy
+    input_table['class'][np.logical_and(input_table['Separation_GLADE']<1.5,input_table['class']==2)] = 5 #extragalactic XRB
+    
+
 if "qual" in input_table.colnames:
     input_table['class'][input_table['qual']<2] = np.nan
+    
+    
+if "SC_EXTENT" in input_table.colnames:
+    input_table['class'][input_table['SC_EXTENT']>0]= 6 #extended
 
 input_table.write(input_fname.replace('.','_typ.'), overwrite=True)

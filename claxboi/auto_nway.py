@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/hugo/anaconda3/bin/python3
 # -*- coding: utf-8 -*-
 """
 Created on Thu Jul 22 18:55:39 2021
@@ -13,24 +13,67 @@ import numpy as np
 import sys
 os.chdir('/home/htranin/')
 
+#####
+#CDS catalogues [optical, infrared] to be matched with the X-ray catalogue
+
+cds_tables = [["Gaia EDR3","PanSTARRS DR1","DES DR1","USNO-B1.0"],
+              ["2MASS","AllWISE","UnWISE"]]
+# sky coverages in squared degrees
+cds_cov = [[41253,31512,5255,41253],[41253,41253,41253]]
+# number of sources. Used to compute average source densities
+cds_ntot = [[1.81e9,1.92e9,3.99e8,1.05e9],[4.71e8,7.48e8,2.21e9]]
+# User-friendly names
+cds_names = [[cd.replace('_',' ').replace('-',' ').split()[0] for cd in cds_tables[0]],
+             [cd.replace('_',' ').replace('-',' ').split()[0] for cd in cds_tables[1]]]
+# Maximum matching radius
+radius = 8
+# False positive rates used to calibrate p_any. The last value is used as calibration.
+nwaycutoffs=[0.01,0.03,0.05,0.1,0.15]
+nwaycutoffs=str(nwaycutoffs)
+# Column names to use in secondary catalog
+optircolnames = ["ra","dec","phot_rp_mean_mag","phot_bp_mean_mag","phot_g_mean_mag","pm","rmag","bmag","gmag","imag","rkmag","rmag1","rmag2","bmag1","bmag2","kmag","w1mag","w2mag","fw1","fw2"]
+
+
+# Following parameters can be used for reruns and debugging
 skip_actual = False #skip to fake positions
 skip_cds = False #skip cdsskymatch
 skip_nway = False #skip nway runs
 nonmatchonly = False #remove secure matches before matching again with another catalogue
+
+# Input file
 if len(sys.argv)>1:
     input_fname = sys.argv[1]
 else:
-    input_fname = "4XMM_subset.fits"   # IMPORTANT: first restrict the catalogue to less than ~10 columns to avoid kill    
-radius = 8
+    input_fname = "classificationXray-main/data/4XMM_DR12cat_slim_v1.0.fits"   # IMPORTANT: first restrict the catalogue to less than ~10 columns to avoid kill    
+
 
 param = ' '.join(list(np.array([skip_actual,skip_cds,skip_nway,nonmatchonly,radius,input_fname]).astype(str)))
 
+
+
+#Tune nway calibrate cutoff to return a text file
+path = os.popen("which nway-calibrate-cutoff.py").read()[:-1]
+if path=="":
+    print("error in the installation of nway. Please check that nway is well installed")
+    exit()
+else:
+    f = open(path,"r")
+    lines = f.readlines()
+    line = 'numpy.savetxt(args.realfile + "_p_any_cutoffquality.txt", numpy.array([%s,[cutoffs[numpy.argmin(abs(numpy.array(error_rate)-rate))] for rate in %s]]).T, fmt="%.3f", header="fp_rate p_any_cutoff")\n'%(nwaycutoffs,nwaycutoffs)
+    if not(line in lines):
+        f.close()
+        f = open(path,"a")
+        f.write("\n")
+        f.write(line)
+        print("added one line of code to", path)
+    f.close()
+
 # Use the default settings (err_c1, coverage) of X-ray catalogues (2SXPS, 4XMM or CSC2)
-whole_X_catalog = 0
+whole_X_catalog = 1
 
 if not(whole_X_catalog):
     # Put the sky coverage of your catalog, in deg²
-    coverage = 17441/502000*1239
+    coverage = 602000/502000*1239
     # Put the position error column of your catalog below, in arcsec
     error_column = "SC_POSERR"
 
@@ -71,13 +114,29 @@ def find_id_ra_dec(table,fname,return_flux=False):
     if not(return_flux):
         return id_colname, ra_colname, dec_colname
     else:
+        flux_colnames=[]
+        flux_colname =" "
         for col in colnames:
-            if "flux" in col.lower():
-                flux_colname = col
-                break
+            if "flux" in col.lower() and not(col.lower()[-3:] in ['err','lim','pos','neg']):
+                flux_colnames.append(col)
+        print("Flux columns found:", flux_colnames)
+        if len(flux_colnames)==1:
+            flux_colname=flux_colnames[0]
+        colmaxflux = flux_colnames[np.nanargmax(list(table[0][flux_colnames]))]
+        while not(flux_colname in flux_colnames):
+            flux_colname = input("Column to use for flux? [%s] "%colmaxflux)
+            if flux_colname == '':
+                flux_colname = colmaxflux
+        print("Selected column", flux_colname)
         return id_colname, ra_colname, dec_colname, flux_colname
+ 
     
-def ugly_mag_computations(cds_name,cdsout_fname):
+
+def mag_computations(cds_name,cdsout_fname):
+    """Function to calibrate all optical and infrared magnitudes to the Gaia and WISE photometric bands.
+    The following linear relations between magnitudes were calibrated empirically using safe matches (better than 0.5 arcsec).
+    The resulting magnitudes are only a proxy of Gaia and WISE magnitudes and should not be used for optical studies.
+    """
     cds = Table.read(cdsout_fname)
     if cds_name=="Gaia":
         cds['phot_rp_mean_mag'].name='Rmag'
@@ -136,13 +195,13 @@ if __name__ == "__main__":
     #Load the X-ray catalogue
     
     
-    xname = input_fname.replace('_',' ').replace('-',' ').split()[0]
+    xname = input_fname.split('/')[-1].replace('_',' ').replace('-',' ').split()[0]
     if whole_X_catalog:
         if xname=="2SXPS":
             coverage = 3790
             err_c1 = "Err63"
         elif xname[:4]=="4XMM":
-            coverage = 1239       #DR10: 1192
+            coverage = 1283       #DR10: 1192
             err_c1 = "SC_POSERR"
         elif xname[:4]=="CSC2":
             coverage = 550
@@ -154,7 +213,10 @@ if __name__ == "__main__":
     input_table = Table.read(input_fname)
         
     id_c1, ra_c1, dec_c1 = find_id_ra_dec(input_table,input_fname)
-    
+    input_table[ra_c1].name = "RA"
+    ra_c1 = "RA"
+    input_table[dec_c1].name = "DEC"
+    dec_c1 = "DEC"
             
     if not("id" in id_c1.lower()):
         input_table[id_c1].name=id_c1+"_ID"
@@ -174,7 +236,7 @@ if __name__ == "__main__":
             else:
                 input_table = input_table[id_c1,ra_c1,dec_c1,err_c1]
         
-        input_fname = input_fname.replace(".","_thin.")
+        input_fname = ".".join(input_fname.split(".")[:-1])+"_thin.fits"
         input_table.write(input_fname, overwrite=True)
         
         
@@ -212,15 +274,7 @@ if __name__ == "__main__":
     
         
     
-    #####
-    #CDS catalogues to be matched with the X-ray catalogue
     
-    cds_tables = [["Gaia EDR3","PanSTARRS DR1","DES DR1","USNO-B1.0"],
-                  ["2MASS","AllWISE","UnWISE"]]
-    cds_cov = [[41253,31512,5255,41253],[41253,41253,41253]]
-    cds_ntot = [[1.81e9,1.92e9,3.99e8,1.05e9],[4.71e8,7.48e8,2.21e9]]
-    cds_names = [[cd.replace('_',' ').replace('-',' ').split()[0] for cd in cds_tables[0]],
-                 [cd.replace('_',' ').replace('-',' ').split()[0] for cd in cds_tables[1]]]
     
     for iwv in range(2):
         aux = Table.read(input_fname)
@@ -238,25 +292,28 @@ if __name__ == "__main__":
             if not(skip_actual):
                 cdsout_fname = "%s_near_%s.fits"%(cds_name,xname)
                 try:
-                    skip_this = 0#(os.path.isfile(cdsout_fname) and Table.read(cdsout_fname).meta['PAR_NWAY']==param)
+                    skip_this = (os.path.isfile(cdsout_fname) and Table.read(cdsout_fname).meta['PAR_NWAY']==param)
                 except:
                     skip_this = 0
                 
                 
                 if not(skip_this):
                     if not(skip_cds):
-                        cmd='stilts cdsskymatch in="%s" ra="%s" dec="%s" cdstable="%s" find=all out="result.fits" radius=%.1f'%(input_fname, ra_c1, dec_c1, cds_tables[iwv][icds],radius*1.25)
+                        cmd='stilts cdsskymatch in="%s" out="%s" ra="%s" dec="%s"  cdstable="%s" find=all  radius=%.1f'%(input_fname, 'result.fits', ra_c1, dec_c1, cds_tables[iwv][icds],radius*1.25)
                         print(cmd)
-                        os.system(cmd) 
+                        read=os.popen(cmd).read() 
+                        
                     
                     ##First run on actual positions
                     #Remove duplicates
                     result = Table.read("result.fits")
                     if not(skip_cds):
-                        result.remove_columns(result.colnames[:len(input_table.colnames)])
+                        result.remove_columns(result.colnames[:len(aux.colnames)])
                         id_c2, ra_c2, dec_c2 = find_id_ra_dec(result,'result.fits')
+                        print("Columns identified in CDS table:",id_c2, ra_c2, dec_c2)
                         result[ra_c2].name = "RA"
                         result[dec_c2].name = "DEC"
+                        result.remove_columns([c for c in result.colnames if not(c.lower() in [id_c2.lower()]+optircolnames)])
                         result.write('result.fits', overwrite="True")
                     else:
                         ra_c2, dec_c2 = "RA", "DEC"
@@ -264,20 +321,23 @@ if __name__ == "__main__":
                     if not(skip_cds):
                         if os.path.isfile(cdsout_fname):
                             os.remove(cdsout_fname)                       
-                        os.system('stilts tmatch1 in="result.fits" matcher="exact" values="%s" action="keep1" out="%s"'%(id_c2,cdsout_fname))
+                        cmd='stilts tmatch1 in="result.fits" matcher="exact" values="%s" action="keep1" out="%s"'%(id_c2,cdsout_fname)
+                        print(cmd)
+                        read=os.popen(cmd).read()
                         if not(os.path.isfile(cdsout_fname)):
-                            os.system('cp result.fits %s'%cdsout_fname)
+                            cmd='cp result.fits %s'%cdsout_fname
+                            read=os.popen(cmd).read()
                         # do magnitude calibration between catalogues
-                        ugly_mag_computations(cds_name, cdsout_fname)
+                        mag_computations(cds_name, cdsout_fname)
                         # restrict to a few columns
                         result = Table.read(cdsout_fname)
-                        result.remove_columns([c_rem for c_rem in result.colnames if not(c_rem in ["RA","DEC","Rmag","Bmag","W1mag","W2mag","pm"])])
+                        result.remove_columns([c_rem for c_rem in result.colnames if not(c_rem in [id_c2,"RA","DEC","Rmag","Bmag","W1mag","W2mag","pm"])])
                         result.meta.update({"PAR_NWAY":param})
                         result.write(cdsout_fname,overwrite=True)
                     if nonmatchonly:
                         cmd='stilts tmatch2 out="%s" matcher="sky" params="15" values1="%s %s" values2="%s %s" find="best1" in1="%s" in2="aux.fits"'%(cdsout_fname, ra_c2,dec_c2,ra_c4,dec_c4,cdsout_fname)
                         print(cmd)
-                        os.system(cmd)
+                        read=os.popen(cmd).read()
                         result = Table.read(cdsout_fname)
                         result.remove_columns(result.colnames[-len(aux_new.colnames)+3:])
                         result.meta.update({"PAR_NWAY":param})
@@ -293,14 +353,14 @@ if __name__ == "__main__":
                 
                 
                 if not(skip_nway) and not(skip_this):
-                    os.system('nway-write-header.py %s %s %.2f'
-                              %(input_fname,xname,coverage))
-                    os.system('nway-write-header.py %s %s %.2f'
-                              %(cdsout_fname,cds_name,cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds]))
+                    cmd='nway-write-header.py %s %s %.2f'%(input_fname,xname,coverage)
+                    read=os.popen(cmd).read()
+                    cmd='nway-write-header.py %s %s %.2f'%(cdsout_fname,cds_name,cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])
+                    read=os.popen(cmd).read()
                     
                     cmd='nway.py %s :%s %s 0.1 --out=example-%s-%s.fits --radius %.1f --mag %s:%s auto'%(input_fname, err_c1, cdsout_fname, cds_name, xname, radius, cds_name.upper(), ["Rmag","W1mag"][iwv])
                     print(cmd)
-                    os.system(cmd)
+                    read=os.popen(cmd).read()
                     result = Table.read('example-%s-%s.fits'%(cds_name,xname))
                     result.meta.update({"PAR_NWAY":param})
                     result.write('example-%s-%s.fits'%(cds_name,xname),overwrite=True)
@@ -318,15 +378,17 @@ if __name__ == "__main__":
                     if not(skip_cds):
                         cmd='stilts cdsskymatch in="%s" ra="%s" dec="%s" cdstable="%s" find=all out="result-fake.fits" radius=%.1f'%(input_fname, ra_c1+'_fake', dec_c1+'_fake', cds_tables[iwv][icds],radius*1.25)
                         print(cmd)
-                        os.system(cmd)
+                        read=os.popen(cmd).read()
                     #Remove duplicates
                     result = Table.read("result-fake.fits")
                     print("Fake match terminated with success")
                     if not(skip_cds):
-                        result.remove_columns(result.colnames[:len(input_table.colnames)])
+                        result.remove_columns(result.colnames[:len(aux.colnames)])
                         id_c2, ra_c2, dec_c2 = find_id_ra_dec(result,'result-fake.fits')
+                        print("Columns identified in CDS table:",id_c2, ra_c2, dec_c2)
                         result[ra_c2].name = "RA"
                         result[dec_c2].name = "DEC"
+                        result.remove_columns([c for c in result.colnames if not(c.lower() in [id_c2.lower()]+optircolnames)])
                         result.write('result-fake.fits', overwrite="True")
                     else:
                         ra_c2, dec_c2 = "RA", "DEC"
@@ -334,18 +396,22 @@ if __name__ == "__main__":
                     if not(skip_cds):
                         if os.path.isfile(cdsout_fname2):
                             os.remove(cdsout_fname2)
-                        os.system('stilts tmatch1 in="result-fake.fits" matcher="exact" values="%s" action="keep1" out="%s"'%(id_c2,cdsout_fname2))
+                        cmd='stilts tmatch1 in="result-fake.fits" matcher="exact" values="%s" action="keep1" out="%s"'%(id_c2,cdsout_fname2)
+                        print(cmd)
+                        read=os.popen(cmd).read()
                         if not(os.path.isfile(cdsout_fname2)):
-                            os.system('cp result-fake.fits %s'%cdsout_fname2)
-                        ugly_mag_computations(cds_name, cdsout_fname2)
+                            cmd='cp result-fake.fits %s'%cdsout_fname2
+                            read=os.popen(cmd).read()
+                        mag_computations(cds_name, cdsout_fname2)
+                        # restrict to a few columns
                         result = Table.read(cdsout_fname2)
-                        result.remove_columns([c_rem for c_rem in result.colnames if not(c_rem in ["RA","DEC","Rmag","Bmag","W1mag","W2mag"])])
+                        result.remove_columns([c_rem for c_rem in result.colnames if not(c_rem in [id_c2,"RA","DEC","Rmag","Bmag","W1mag","W2mag"])])
                         result.meta.update({"PAR_NWAY":param})
                         result.write(cdsout_fname2,overwrite=True)
                     if nonmatchonly:
                         cmd = 'stilts tmatch2 out="%s" matcher="sky" params="15" values1="%s %s" values2="%s %s" find="best1" in1="%s" in2="aux.fits"'%(cdsout_fname2, ra_c2,dec_c2,ra_c4+'_fake',dec_c4+'_fake',cdsout_fname2)
                         print(cmd)
-                        os.system(cmd)
+                        read=os.popen(cmd).read()
                         result = Table.read(cdsout_fname2)
                         result.remove_columns(result.colnames[-len(aux_new.colnames)+3:])
                         result.meta.update({"PAR_NWAY":param})
@@ -356,10 +422,10 @@ if __name__ == "__main__":
                 #Run Nway
                 skip_this = 0#(os.path.isfile('example-%s-%s-fake.fits'%(cds_name,xname)) and Table.read('example-%s-%s-fake.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
                 if not(skip_nway) and not(skip_this):
-                    os.system('nway-write-header.py %s %s %.2f'
-                              %(input_fname.replace('.fits','-fake.fits'),xname,coverage))
-                    os.system('nway-write-header.py %s %s %.2f'
-                              %(cdsout_fname2,cds_name,cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds]))
+                    cmd='nway-write-header.py %s %s %.2f'%(input_fname.replace('.fits','-fake.fits'),xname,coverage)
+                    read=os.popen(cmd).read()
+                    cmd='nway-write-header.py %s %s %.2f'%(cdsout_fname2,cds_name,cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])
+                    read=os.popen(cmd).read()
                     
                     use_mag = 'bias_%s_%s'%(cds_name.upper(),['Rmag','W1mag'][iwv]) in Table.read('example-%s-%s.fits'%(cds_name,xname)).colnames
                     if use_mag:
@@ -370,14 +436,15 @@ if __name__ == "__main__":
                                                                                                cds_name, xname,radius)
                     
                     print(cmd)
-                    os.system(cmd)
+                    read=os.popen(cmd).read()
                     result = Table.read('example-%s-%s-fake.fits'%(cds_name,xname))
                     result.meta.update({"PAR_NWAY":param})
                     result.write('example-%s-%s-fake.fits'%(cds_name,xname),overwrite=True)
                     
                     ##Compare actual/fake with Nway to calibrate a p_any cutoff
-                    os.system('nway-calibrate-cutoff.py example-%s-%s.fits example-%s-%s-fake.fits'
-                              %(cds_name,xname,cds_name,xname))
+                    cmd='nway-calibrate-cutoff.py example-%s-%s.fits example-%s-%s-fake.fits'%(cds_name,xname,cds_name,xname)
+                    print(cmd)
+                    read=os.popen(cmd).read()
                     
             print('removing secure matches')
             example_fname = 'example-%s-%s.fits'%(cds_name,xname)

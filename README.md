@@ -54,6 +54,9 @@ For more advanced X-ray-to-X-ray matches, please use the STONKS pipeline (https:
 
 ### Documentation on <code>auto_gaiaglade.py</code>
 
+Prerequisite: download the GLADE catalog from [this directory](https://drive.google.com/drive/u/2/folders/13lO24K2QGayuX4GPapm2U7Xo4Zps-G-Y
+) and place it in the same folder.
+
 <code>auto_gaiaglade.py</code> augments the X-ray catalog by adding information about the source distance and motion.
 
 Proper motions and Gaia-based distances (from Bailer-Jones et al. 2021) are added to those sources having a Gaia counterpart identified in the previous step. The X-ray mean luminosity based on this distance is then computed. This luminosity <code>Lx_2</code> should not be used for extragalactic sources.

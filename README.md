@@ -30,6 +30,7 @@ NWAY is a Bayesian probabilistic cross-matching tool able to identify multiwavel
 <code>auto_nway.py</code> is used to identify multiwavelength counterparts of your X-ray sources. By default, the following set of wavedomain and CDS catalogues are used to search for counterparts:
 * Optical: Gaia EDR3, PanSTARRS DR1, DES DR1, USNO-B1.0
 * Infrared: 2MASS, AllWISE, UnWISE
+
 This choice is motivated by the complementarity and combined completeness of these surveys. You can complement or update this set of catalogs by changing the <code>cds_table</code> list in <code>auto_nway.py</code> (and changing the <code>cds_cov</code>, <code>cds_ntot</code>, <code>cds_names</code> lists accordingly).
 The maximum angular separation is set by the <code>radius</code> parameter (default value: 8 arcsec).
 Since NWAY works on local files, eligible counterpart candidates are first searched and downloaded in cones of radius <code>1.25*radius</code> around each X-ray (true or fake) coordinates.
@@ -79,7 +80,9 @@ The difference between nearby and distant AGN (resp. Galactic and extragalactic 
 
 As a result, columns <code>isAGN, isStar, isXRB</code> and <code>isCV</code> are added to the X-ray catalog, containing a bitwise flag encoding the reference(s) where the identification was (were) found. Example for <code>isAGN</code>: 1 means it is identified as AGN given its mid-infrared emission (Secrest+2015), 2 means it is in the Veron-Cetty & Veron catalog, and 3 means it is in both catalogs.
 
-When a source is unambiguously identified in the set of Vizier catalogs (meaning one of the <code>is...</code> column is non-zero and all other are zero), the value encoding the source type (which is by default, 0: QSO, 1: Star, 2: gal_XRB, 3: CV, 4: AGN, 5: ex_xrb, 6: extended) is stored in the column <code>class</code>, later used for training.
+Columns <code>isAGN, isStar, isXRB</code> and <code>isCV</code> are also increased by 1024 for every source identified as the corresponding types in Simbad. Note that an identification in Simbad alone is not trusted as a robust identification and thus not used in the training sample (this is why e.g. isAGN=1024 does not produce class = 0).
+
+When a source is unambiguously identified in the set of Vizier catalogs (meaning one of the <code>is...</code> column is non-zero and all other are zero), the value encoding the source type (which is by default, 0: QSO, 1: Star, 2: gal_XRB, 3: CV, 4: AGN, 5: ex_xrb, 6: extended) is stored in the column <code>class</code>, later used for training. Unidentified sources have no value (NULL / nan) in the <code>class</code> column.
 
 
 ### Documentation on <code>classify_new.py</code>

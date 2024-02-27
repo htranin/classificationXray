@@ -2,13 +2,13 @@
 ## Classification of X-ray sources using Naive Bayes Optimized Inference (CLAXBOI)
 
 This folder contains all the necessary to run the CLAXBOI code (Tranin et al. 2022, A&A 657, 138) to augment and classify your X-ray catalog.
-Requirements of the system:
+Requirements on the system:
 1. Python >3.6
 2. Ubuntu (for a few os.system commands)
 3. Commonly-used Python packages in astrophysics (os, sys, numpy, scipy, astropy, yaml, tqdm)
 4. NWAY (https://github.com/JohannesBuchner/nway) must be installed on your machine. Alternatively, you can skip the multiwavelength crossmatching step, but in that case it is preferable to have identified multiwavelength counterparts beforehand in your input catalog.
 
-Requirements of the catalog:
+Requirements on the catalog:
 1. first column is the identifier
 2. there are columns for the coordinates (their name must be or contain "ra" and "dec" or "de")
 3. there is a column for the X-ray flux

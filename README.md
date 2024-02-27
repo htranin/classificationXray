@@ -104,3 +104,5 @@ Input distributions and density estimations will be automatically plotted and sa
 Eventually, to check the probability track (main interpretability tool) of a particular source:
 
 <code>python3 Pbatrack.py *SourceIdentifier*</code>
+
+For 4XMM-DR12, the output of the code can be accessed through this link: https://drive.google.com/drive/u/2/folders/13lO24K2QGayuX4GPapm2U7Xo4Zps-G-Y

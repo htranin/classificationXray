@@ -31,7 +31,7 @@ output_fname = input_fname.replace(".fits","_loc.fits")
 
 # GLADE
 if not(skip_glade):    
-    glade_fname = "../data/GLADE2016_corrected_0123.fits"
+    glade_fname = "GLADE2016_corrected_0123.fits"
     glade_table = Table.read(glade_fname)
     ## RECENT UPDATE 11/1/22    
     #glade_table = glade_table[abs(glade_table['Dist']-175.5)<=174.5]
